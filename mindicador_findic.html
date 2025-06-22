@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Comparación Completa Indicadores Económicos - Chile</title>
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: #f5f5f5;
+    margin: 2rem;
+    color: #2f3640;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 {
+    color: #0a3d62;
+    margin-bottom: 1rem;
+    font-weight: 700;
+    text-align: center;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 1000px;
+    background: white;
+    box-shadow: 0 0 15px rgba(0,0,0,0.1);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 0.75rem 1rem;
+    text-align: right;
+    border-bottom: 1px solid #ddd;
+    font-weight: 600;
+    font-size: 1rem;
+  }
+  /* Incremento tamaño fuente en valores (2ª y 3ª columnas) */
+  td:nth-child(2),
+  td:nth-child(3) {
+    font-size: 1.25rem;
+  }
+  th {
+    background-color: #40739e;
+    color: white;
+    text-align: center;
+    font-size: 1.1rem;
+  }
+  td:first-child {
+    text-align: left;
+    font-weight: 700;
+    color: #0a3d62;
+  }
+  .error {
+    color: #e84118;
+    font-weight: 700;
+    margin-top: 1rem;
+    text-align: center;
+  }
+  caption {
+    caption-side: bottom;
+    padding: 0.5rem;
+    font-style: italic;
+    font-size: 0.9rem;
+    color: #666;
+  }
+  @media (max-width: 768px) {
+    body {
+      margin: 1rem;
+    }
+    table {
+      font-size: 0.9rem;
+    }
+    /* Mantener tamaño aumentado también en móvil */
+    td:nth-child(2),
+    td:nth-child(3) {
+      font-size: 1.15rem;
+    }
+  }
+  .nota {
+    margin-top: 1rem;
+    font-style: italic;
+    color: #555;
+    max-width: 1000px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<h1>Comparación Completa Indicadores Económicos - Chile</h1>
+<table aria-label="Tabla comparativa de todos los indicadores económicos de mindicador.cl y findic.cl">
+  <thead>
+    <tr>
+      <th>Indicador</th>
+      <th>mindicador.cl - Último valor (Fecha)</th>
+      <th>findic.cl - Último valor (Fecha)</th>
+    </tr>
+  </thead>
+  <tbody id="tabla-indicadores">
+    <tr><td colspan="3" style="text-align:center;">Cargando datos...</td></tr>
+  </tbody>
+  <caption>Fuente: mindicador.cl y findic.cl - Actualizado en tiempo real</caption>
+</table>
+<div id="error" class="error" role="alert" aria-live="assertive"></div>
+<div class="nota">
+  Nota: Algunos indicadores no aparecen en findic.cl por cobertura limitada o falta de actualización.
+</div>
+
+<script>
+  const tablaBody = document.getElementById('tabla-indicadores');
+  const errorDiv = document.getElementById('error');
+
+  // Formatea valores con moneda o porcentaje según indicador
+  function formatearValor(valor, indicador) {
+    if (valor === null || valor === undefined) return 'N/A';
+    const indicadoresPorcentaje = ['ipc', 'tpm', 'desempleo'];
+    const indicadorLower = indicador.toLowerCase();
+    if (indicadoresPorcentaje.includes(indicadorLower)) {
+      return valor.toFixed(2) + ' %';
+    }
+    if (typeof valor === 'number') {
+      // El cobre va en USD, otros en CLP
+      if (indicadorLower === 'cobre') {
+        return valor.toLocaleString('es-CL', { style: 'currency', currency: 'USD' });
+      }
+      return valor.toLocaleString('es-CL', { style: 'currency', currency: 'CLP' });
+    }
+    return valor;
+  }
+
+  // Parsear fecha ISO o string para mostrar DD-MM-YYYY
+  function formatearFecha(fechaStr) {
+    if (!fechaStr) return 'N/A';
+    const d = new Date(fechaStr);
+    if (isNaN(d)) return fechaStr;
+    return d.toLocaleDateString('es-CL');
+  }
+
+  // Obtener datos desde mindicador.cl
+  async function fetchMindicador() {
+    const url = 'https://mindicador.cl/api';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Error al obtener datos de mindicador.cl');
+    return await resp.json();
+  }
+
+  // Obtener datos desde findic.cl
+  async function fetchFindic() {
+    const url = 'https://findic.cl/api';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('Error al obtener datos de findic.cl');
+    return await resp.json();
+  }
+
+  // Procesar y comparar datos
+  async function cargarDatos() {
+    errorDiv.textContent = '';
+    tablaBody.innerHTML = '<tr><td colspan="3" style="text-align:center;">Cargando datos...</td></tr>';
+
+    try {
+      const [mindicadorData, findicData] = await Promise.all([fetchMindicador(), fetchFindic()]);
+
+      // Extraer indicadores de mindicador (keys que no sean metadata)
+      const indicadoresMindicador = Object.entries(mindicadorData)
+        .filter(([key, val]) => val && typeof val === 'object' && 'valor' in val)
+        .map(([key]) => key.toLowerCase());
+
+      // Extraer indicadores de findic (keys que no sean metadata)
+      const indicadoresFindic = Object.keys(findicData).map(k => k.toLowerCase());
+
+      // Unión de todos indicadores (set para evitar duplicados)
+      const indicadoresSet = new Set([...indicadoresMindicador, ...indicadoresFindic]);
+
+      // --- FILTRAR indicadores para mostrar solo si al menos una fuente tiene datos ---
+      const indicadoresFiltrados = Array.from(indicadoresSet).filter(indicador => {
+        const mindi = mindicadorData[indicador];
+        const findi = findicData[indicador];
+
+        const valMindi = mindi && typeof mindi === 'object' 
+          ? mindi.valor || (mindi.serie && mindi.serie.length > 0 ? mindi.serie[0].valor : null) 
+          : null;
+        const valFindi = findi && findi.serie && findi.serie.length > 0 
+          ? findi.serie[0].valor 
+          : (typeof findi === 'number' ? findi : null);
+
+        // Mostrar solo si alguno tiene valor no nulo
+        return valMindi !== null || valFindi !== null;
+      });
+
+      const indicadores = indicadoresFiltrados.sort();
+
+      // Construir filas
+      const filas = indicadores.map(indicador => {
+        // Datos mindicador
+        const mindi = mindicadorData[indicador];
+        let valMindi = mindi && typeof mindi === 'object' ? mindi.valor : null;
+        let fechaMindi = mindi && typeof mindi === 'object' ? mindi.fecha || mindi.fecha_ultima_actualizacion || null : null;
+        if (!fechaMindi && mindi && mindi.serie && mindi.serie.length > 0) fechaMindi = mindi.serie[0].fecha;
+
+        // Datos findic
+        const findi = findicData[indicador];
+        let valFindi = null;
+        let fechaFindi = null;
+        if (findi && findi.serie && findi.serie.length > 0) {
+          valFindi = findi.serie[0].valor;
+          fechaFindi = findi.serie[0].fecha;
+        } else if (typeof findi === 'number') {
+          valFindi = findi;
+          fechaFindi = null;
+        }
+
+        // Formatear valores y fechas
+        const valorMind = valMindi !== null ? formatearValor(valMindi, indicador) : '<span style="color:#e84118;">No disponible</span>';
+        const fechaMind = formatearFecha(fechaMindi);
+
+        const valorFind = valFindi !== null ? formatearValor(valFindi, indicador) : '<span style="color:#e84118;">No disponible</span>';
+        const fechaFind = formatearFecha(fechaFindi);
+
+        return `<tr>
+          <td>${indicador.toUpperCase()}</td>
+          <td title="Fecha: ${fechaMind}">${valorMind} <br /><small style="color:#555;">${fechaMind}</small></td>
+          <td title="Fecha: ${fechaFind}">${valorFind} <br /><small style="color:#555;">${fechaFind}</small></td>
+        </tr>`;
+      });
+
+      tablaBody.innerHTML = filas.join('');
+
+    } catch (error) {
+      tablaBody.innerHTML = '';
+      errorDiv.textContent = `Error cargando datos: ${error.message}`;
+      console.error(error);
+    }
+  }
+
+  cargarDatos();
+</script>
+</body>
+</html>
+
