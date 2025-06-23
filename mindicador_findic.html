@@ -208,6 +208,9 @@
         } else if (typeof findi === 'number') {
           valFindi = findi;
           fechaFindi = null;
+        } else {
+          valFindi = findi.valor;
+          fechaFindi = findi.fecha+'T04:00:00.000Z';
         }
 
         // Formatear valores y fechas
